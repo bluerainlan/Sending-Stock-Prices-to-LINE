@@ -2,13 +2,15 @@ import yfinance as yf
 import requests
 from datetime import datetime
 
+LINE_NOTIFY_TOKEN = os.environ['LINE_NOTIFY_TOKEN']
+
 def send_to_line(message):
     # 獲取當前時間
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # 設置 Line Notify 的 API 地址和授權 token
     url = 'https://notify-api.line.me/api/notify'
-    token='zxKcDeCPxW7C4qoFeICEiGuReQvSUJBMAm9o16sfvS6'
+    #token='zxKcDeCPxW7C4qoFeICEiGuReQvSUJBMAm9o16sfvS6'
     
     # 設置請求頭
     headers = {
@@ -26,7 +28,7 @@ def send_to_line(message):
     
     # 發送 POST 請求
     r = requests.post(url, headers=headers, data=send)
-    print(r.text)
+    
 
 def get_real_time_stock_info(symbol, target_low_price, target_high_price):
     # 使用 yfinance 的 Ticker 物件來取得股票資訊
@@ -66,3 +68,5 @@ target_high_price = '156' # =input('輸入最高價:')
 
 # 呼叫函式獲取即時股票資訊
 get_real_time_stock_info(stock_symbol, target_low_price, target_high_price)
+
+send_to_line(LINE_NOTIFY_TOKEN, message)
