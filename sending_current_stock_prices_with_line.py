@@ -1,81 +1,68 @@
+import yfinance as yf
 import requests
-from fugle_realtime import HttpClient
-import pandas as pd
-import numpy as np
-import os
+from datetime import datetime
 
-# 匯入關注清單
-portfolio_watchlist = open('portfolio_watchlist.txt', 'r').read().strip().split(',')
-
-# secret token
-FUGLE_API_TOKEN = os.environ['FUGLE_API_TOKEN']
-LINE_NOTIFY_TOKEN = os.environ['LINE_NOTIFY_TOKEN']
-
-def fugle_get_stock_price(portfolio):
-  stock_price_dataframe = pd.DataFrame(columns=['ticker', 
-                                                'stock_name',
-                                                'date',
-                                                'update_time', 
-                                                'price', 
-                                                'yesterday_price', 
-                                                'price_change'])
-  stock_price_dataframe['ticker'] = portfolio
-
-  # Fugle API 金鑰
-  api_client = HttpClient(api_token = FUGLE_API_TOKEN)
-  
-  for i in range(len(portfolio)):
+def send_to_line(message):
+    # 獲取當前時間
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # 富果 API 讚! (再次強調非業配)
-    meta_data = api_client.intraday.meta(symbolId=portfolio[i])
-    price_data = api_client.intraday.chart(symbolId=portfolio[i])
+    # 設置 Line Notify 的 API 地址和授權 token
+    url = 'https://notify-api.line.me/api/notify'
+    token='zxKcDeCPxW7C4qoFeICEiGuReQvSUJBMAm9o16sfvS6'
     
-    # 股票名稱 & 昨日股價
-    stock_name = str(meta_data['data']['meta']['nameZhTw'])
-    yesterday_price = float(meta_data['data']['meta']['previousClose'])
-    
-    # 即時股價 & 日期 & 即時股價更新時間
-    price = float(price_data['data']['chart']['c'][-1])
-    date = price_data['data']['info']['lastUpdatedAt'][5:7]+'/'+price_data['data']['info']['lastUpdatedAt'][8:10]
-    update_time = price_data['data']['info']['lastUpdatedAt'][11:19]
-
-    # 把數據塞進 DafaFrame 欄位
-    stock_price_dataframe['stock_name'][i] = stock_name
-    stock_price_dataframe['date'][i] = date
-    stock_price_dataframe['update_time'][i] = update_time
-    stock_price_dataframe['yesterday_price'][i] = yesterday_price
-    stock_price_dataframe['price'][i] = price
-
-  # 計算報酬率
-  stock_price_dataframe['price_change'] = ((stock_price_dataframe['price']/stock_price_dataframe['yesterday_price']-1)*100).astype('float').round(decimals = 2)
-  
-  # 按照漲跌幅排序
-  stock_price_dataframe = stock_price_dataframe.sort_values(by=['price_change'], ascending=False).reset_index()
-  
-  return stock_price_dataframe
-
-def generate_message(stock_price_dataframe):
-  # 標題: 價格播報/ 日期/ 時間
-  message = '*價格播報*'+'\n'+'```'+stock_price_dataframe.date[0]+' '+stock_price_dataframe.update_time[0]+'```\n'
-  
-  # 細項: 股票名稱/ 即時股價/ 漲跌%
-  for i in range(len(stock_price_dataframe)):
-    message += stock_price_dataframe.stock_name[i] + (6 - len(stock_price_dataframe.stock_name[i]))*'  ' + str(stock_price_dataframe.price[i]) + (6 - len(str(stock_price_dataframe.price[i])))*'  ' +'( _' + str(stock_price_dataframe.price_change[i]) + '%_ )' + '\n'
-  
-  return message
-
-
-def lineNotifyMessage(token, msg):
+    # 設置請求頭
     headers = {
-        "Authorization": "Bearer " + token, 
-        "Content-Type" : "application/x-www-form-urlencoded"
+        'Authorization': 'Bearer ' + token,
     }
+    
+    # 將時間和訊息格式化成 Line Notify 的格式
+    message_with_time = f"{message} \n {current_time}"
+    
+    # 設置要發送的消息內容
+    send = {
+        
+        'message': message_with_time,
+    }
+    
+    # 發送 POST 請求
+    r = requests.post(url, headers=headers, data=send)
+    print(r.text)
 
-    payload = {'message': msg }
-    r = requests.post("https://notify-api.line.me/api/notify", headers = headers, params = payload)
-    return r.status_code
+def get_real_time_stock_info(symbol, target_low_price, target_high_price):
+    # 使用 yfinance 的 Ticker 物件來取得股票資訊
+    ticker = yf.Ticker(symbol)
+    
+    # 獲取即時股票資訊
+    real_time_info = ticker.info
 
-stock_price_dataframe = fugle_get_stock_price(portfolio_watchlist)
-message = generate_message(stock_price_dataframe)
-lineNotifyMessage(LINE_NOTIFY_TOKEN, message)
+    #獲取最低價和最高價
+    low = real_time_info['regularMarketDayLow']
+    high = real_time_info['regularMarketDayHigh']
+    
+    # 將目標價格轉換為浮點數
+    target_low_price = float(target_low_price)
+    target_high_price = float(target_high_price)
+    
+    # 準備股票資訊的格式化字串
+    stock_info = f"股票代碼:{symbol}\n 股票類型:{real_time_info['quoteType']}"
+    # 準備顯示的當前價格訊息
+    current_price_info = f"目前最低價: {real_time_info['regularMarketDayLow']}\n 目前最高價: {real_time_info['regularMarketDayHigh']}"
+    
+    if low <= target_low_price:
+        # 準備要發送的訊息
+        message = f"{stock_info}\n {current_price_info}\n 最低價已達到設定值 {target_low_price}"
+        send_to_line(message)
+    elif high >= target_high_price:
+        # 準備要發送的訊息
+        message = f"{stock_info}\n {current_price_info}\n 最高價已達到設定值 {target_high_price}"
+        send_to_line(message)
 
+# 輸入要查詢的股票代碼
+stock = '0050.TW' #如果要可以輸入股票代碼改=input('輸入要的股票代碼(台股後面需加.TW):')
+stock_symbol = stock 
+#輸入低價及高價
+target_low_price = '154.5' # =input('輸入最低價:')
+target_high_price = '156' # =input('輸入最高價:')
+
+# 呼叫函式獲取即時股票資訊
+get_real_time_stock_info(stock_symbol, target_low_price, target_high_price)
